@@ -124,7 +124,7 @@ def main():
             git.commit(
                 m="{}\n\n{}".format(
                     "[{}] Update OSA SHA".format(args.rpco_branch),
-                    "Connects https://github.com/{}/rpc-openstack/issue/{}".format(
+                    "Connects https://github.com/{}/rpc-openstack/issues/{}".format(
                         args.owner,
                         issue.number
                     )
@@ -140,7 +140,7 @@ def main():
             # Create pull request
             print "---Creating pull request"
             gh_repo.create_pull(title="[{}] Update OSA SHA".format(args.rpco_branch),
-                                body="Connects https://github.com/{}/rpc-openstack/issue/{}".format(
+                                body="Connects https://github.com/{}/rpc-openstack/issues/{}".format(
                                     args.owner,
                                     issue.number
                                     ),
