@@ -11,7 +11,6 @@ import shutil
 # then make a pull request on RPCO.
 
 def _cleanup(working_dir):
-    print "There was an error. Cleaning up."
     shutil.rmtree(working_dir, ignore_errors=True)
 
 def build_args():
@@ -62,6 +61,12 @@ def build_args():
 def main():
 
     # Variables
+    labels = [
+        "prio-expedited",
+        "swimlane-enhancements",
+        "status-needs-review-ready"
+    ]
+
     parser = build_args()
     args = parser.parse_args()
     rpco_github_repo_url = "git@github.com:{}/rpc-openstack.git".format(
@@ -86,7 +91,9 @@ def main():
 
     print "---Creating github issue on {}/rpc-openstack...".format(args.owner)
     if not args.smoke:
-        issue = gh_repo.create_issue(title=issue_title, body=issue_body)
+        issue = gh_repo.create_issue(title=issue_title,
+                                     body=issue_body,
+                                     labels=labels)
     print "---Issue created!"
 
 
@@ -151,6 +158,7 @@ def main():
             _cleanup(working_dir)
         except Exception as e:
             print e.message
+            print "There was an error. Cleaning up."
             _cleanup(working_dir)
             exit()
 
