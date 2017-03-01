@@ -5,6 +5,7 @@ import os
 import github3
 import sh
 import shutil
+import subprocess
 
 # This script will create a github issue on RPCO to bump the SHA,
 # make the sha bump locally, make a commit, push a branch to RPCO,
@@ -96,38 +97,89 @@ def main():
                                      labels=labels)
     print "---Issue created!"
 
+    if not args.smoke:
+        branch_name = "cantu/issue/{}/{}".format(
+            issue.number,
+            args.rpco_branch
+        )
+    else:
+        branch_name = "cantu/testing/bumpify"
 
-    branch_name = "cantu/issue/{}/{}".format(
-        issue.number,
-        args.rpco_branch
-    )
     # Clone the rpc-openstack repository from github
     rpc_working_dir = "{}/rpc-openstack".format(working_dir)
+    osa_working_dir = "{}/openstack-ansible".format(rpc_working_dir)
     print "---Cloning the RPCO repo!"
-    if not args.smoke:
-        try:
-            git.clone("--recursive", rpco_github_repo_url)
-            # Checkout the RPCO branch we are bumping the SHA for
-            print "---Checking out {}".format(args.rpco_branch)
-            git.checkout(
-                args.rpco_branch,
-                _cwd=rpc_working_dir
-            )
-            # Checkout the OSA branch with the commit we want to bump to
-            print "---Making a new branch for the SHA bump"
-            git.checkout(
-                b=branch_name,
-                _cwd=rpc_working_dir
-            )
+    try:
+        git.clone("--recursive", rpco_github_repo_url)
+        # Checkout the RPCO branch we are bumping the SHA for
+        print "---Checking out {}".format(args.rpco_branch)
+        git.checkout(
+            args.rpco_branch,
+            _cwd=rpc_working_dir
+        )
 
-            print "---Getting the OSA branch we want the SHA of"
-            git.checkout("origin/{}".format(args.osa_branch),
-                        _cwd="{}/rpc-openstack/openstack-ansible".format(working_dir))
-            git.add(
-                "openstack-ansible",
-                _cwd=rpc_working_dir
-            )
-            print "---Making the commit"
+        # Get the SHA of the current OSA
+        #git_describe_output = git.describe(_cwd=osa_working_dir)
+#        git_log_output = git.log('--format=format:%H','-1', _cwd=osa_working_dir)
+#        if args.smoke:
+#            print "Current OSA SHA:"
+#            print git_log_output
+#        current_sha = str(git_log_output.stdout)
+
+        git_log_command = ['git', 'log', '--format=format:%H', '-1']
+        git_log_command_p = subprocess.Popen(git_log_command,
+                                             cwd=osa_working_dir,
+                                             stdout=subprocess.PIPE)
+        current_sha = git_log_command_p.communicate()[0]
+        if args.smoke:
+            print "Current OSA SHA: {}".format(current_sha)
+
+        # Checkout the OSA branch with the commit we want to bump to
+        print "---Making a new branch for the SHA bump"
+        git.checkout(
+            b=branch_name,
+            _cwd=rpc_working_dir
+        )
+
+        print "---Getting the OSA branch we want the SHA of"
+        git.checkout("origin/{}".format(args.osa_branch),
+                    _cwd=osa_working_dir)
+
+        git_log_command = ['git', 'log', '--format=format:%H', '-1']
+        git_log_command_p = subprocess.Popen(git_log_command,
+                                             cwd=osa_working_dir,
+                                             stdout=subprocess.PIPE)
+        new_sha = git_log_command_p.communicate()[0]
+        if args.smoke:
+            print "New OSA SHA: {}".format(new_sha)
+
+        print "---Generating OSA diff"
+        # Generate osa-differ and covert to GitHub markdown
+        osa_differ_command = ['osa-differ', current_sha, new_sha, '-u', '--skip-projects']
+        if args.smoke:
+            print "osa-differ command:"
+            print osa_differ_command
+        osa_differ_p = subprocess.Popen(osa_differ_command, stdout=subprocess.PIPE)
+        osa_differ_p.wait()
+        pandoc_command = ['pandoc', '--from', 'rst', '--to', 'markdown_github']
+        pandoc_command_p = subprocess.Popen(pandoc_command, stdin=osa_differ_p.stdout,
+                                            stdout=subprocess.PIPE)
+        osa_differ_p.stdout.close()
+        differ_output = pandoc_command_p.communicate()[0]
+        if args.smoke:
+            print differ_output
+
+        if pandoc_command_p.returncode:
+            print "osa-differ has failed to run"
+            exit()
+
+        # Committing the SHA bump
+        git.add(
+            "openstack-ansible",
+            _cwd=rpc_working_dir
+        )
+        print "---Making the commit"
+        if not args.smoke:
             git.commit(
                 m="{}\n\n{}".format(
                     "[{}] Update OSA SHA".format(args.rpco_branch),
@@ -138,29 +190,32 @@ def main():
                 ),
                 _cwd=rpc_working_dir
             )
-            print "---Pushing the branch up"
+        print "---Pushing the branch up"
+        if not args.smoke:
             git.push(
                 "origin",
                 branch_name,
                 _cwd=rpc_working_dir
             )
-            # Create pull request
-            print "---Creating pull request"
+        # Create pull request
+        print "---Creating pull request"
+        if not args.smoke:
             gh_repo.create_pull(title="[{}] Update OSA SHA".format(args.rpco_branch),
-                                body="Connects https://github.com/{}/rpc-openstack/issues/{}".format(
+                                body="{}\nConnects https://github.com/{}/rpc-openstack/issues/{}".format(
+                                    differ_output,
                                     args.owner,
                                     issue.number
                                     ),
                                 base=args.rpco_branch,
                                 head=branch_name
                                 )
-            print "---Cleaning up"
-            _cleanup(working_dir)
-        except Exception as e:
-            print e.message
-            print "There was an error. Cleaning up."
-            _cleanup(working_dir)
-            exit()
+        print "---Cleaning up"
+        _cleanup(working_dir)
+    except Exception as e:
+        print str(e)
+        print "There was an error. Cleaning up."
+        _cleanup(working_dir)
+        exit()
 
 if __name__ == "__main__":
     main()
