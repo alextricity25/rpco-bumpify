@@ -118,6 +118,9 @@ def main():
             _cwd=rpc_working_dir
         )
 
+        print "---Updating submodule"
+        git.submodule.update(_cwd=rpc_working_dir)
+
         # Get the SHA of the current OSA
         #git_describe_output = git.describe(_cwd=osa_working_dir)
 #        git_log_output = git.log('--format=format:%H','-1', _cwd=osa_working_dir)
@@ -155,7 +158,12 @@ def main():
 
         print "---Generating OSA diff"
         # Generate osa-differ and covert to GitHub markdown
-        osa_differ_command = ['osa-differ', current_sha, new_sha, '-u', '--skip-projects']
+        osa_differ_command = ['osa-differ',
+                              current_sha,
+                              new_sha,
+                              '-u',
+                              '--skip-projects',
+                              '--release-notes']
         if args.smoke:
             print "osa-differ command:"
             print osa_differ_command
